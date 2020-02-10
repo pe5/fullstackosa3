@@ -40,10 +40,11 @@ let persons = [
     }
 ]
 
-app.get('/api/persons/:id', (req, res) => {
+app.get('/api/persons/:id', (request, response, next) => {
     Person.findById(request.params.id).then(person => {
         response.json(person.toJSON())
     })
+    .catch(error => next(error))
   })
 
 app.get('/info', (req, res) => {
@@ -57,43 +58,72 @@ app.get('/', (req, res) => {
 
 app.get('/api/persons', (req, res) => {
     Person.find({}).then(persons => {
-        response.json(persons.toJSON())
+        res.json(persons)
     })
 })
 
-app.post('/api/persons', (request, response) => {
+app.post('/api/persons', (request, response, next) => {
     
-    console.log(request.body)
   
-    if (request.body.name === undefined || request.body.number === undefined) {
-      return response.status(400).json({ 
-        error: 'content missing' 
-      })    
-    }
-
-    if (persons.filter(person => person.name === request.body.name).length > 0) {
-        return response.status(400).json({
-            error: 'name must be unique'
-        })
-    }
-  
-    const person = {
+    const person = new Person({
       name: request.body.name,
       number: request.body.number,
       id: Math.floor(Math.random() * 9999) + 1,
-    }
-  
-    person.save().then(savedPerson => {
-        response.json(savedPerson.toJSON())
     })
+  
+    person.save()
+        .then(savedPerson => savedPerson.toJSON())
+        .then(savedAndFormattedPerson => {
+            response.json(savedAndFormattedPerson)
+        })
+        .catch(error => next(error))
   })
 
-app.delete('/api/persons/:id', (req, res) => {
-    const id = Number(req.params.id)
-    persons = persons.filter(note => note.id !== id)
-  
-    res.status(204).end()
+app.delete('/api/persons/:id', (req, res, next) => {
+    Person.findByIdAndRemove(req.params.id)
+    .then(result => {
+      res.status(204).end()
+    })
+    .catch(error => next(error))
   })
+
+  
+  
+
+  app.put('/api/persons/:id', (request, response, next) => {
+    const body = request.body
+  
+    const person = {
+      name: body.name,
+      number: body.number,
+    }
+  
+    Person.findByIdAndUpdate(request.params.id, person, { new: true })
+      .then(updatedPerson => {
+        response.json(updatedPerson.toJSON())
+      })
+      .catch(error => next(error))
+  })
+
+  const unknownEndpoint = (request, response) => {
+    response.status(404).send({ error: 'unknown endpoint' })
+  }
+  
+  app.use(unknownEndpoint)
+
+  const errorHandler = (error, request, response, next) => {
+    console.error(error.message)
+  
+    if (error.name === 'CastError' && error.kind == 'ObjectId') {
+      return response.status(400).send({ error: 'malformatted id' })
+    } else if (error.name === 'ValidationError') {
+        return response.status(400).json({ error: error.message })
+  
+    next(error)
+  }
+}
+  
+  app.use(errorHandler)
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
